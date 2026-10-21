@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>订单系统</title>
+<style>
+  :root {
+    --primary: #2563eb; --primary-dark: #1d4ed8;
+    --bg: #f5f7fb; --card: #fff; --text: #1f2937; --muted: #6b7280;
+    --border: #e5e7eb; --success: #16a34a; --danger: #dc2626; --warning: #d97706;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); }
+  .hidden { display: none !important; }
+
+  /* ---------- 登录 ---------- */
+  .auth-view { min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #3b82f6 100%); padding: 24px; }
+  .auth-card { width: 100%; max-width: 400px; background: var(--card); border-radius: 16px; padding: 32px;
+    box-shadow: 0 20px 50px rgba(15,23,42,.25); }
+  .auth-card h1 { margin: 0 0 6px; font-size: 24px; text-align: center; }
+  .auth-card .subtitle { margin: 0 0 24px; text-align: center; color: var(--muted); font-size: 13px; }
+  .tabs { display: flex; background: var(--bg); border-radius: 10px; padding: 4px; margin-bottom: 20px; }
+  .tabs button { flex: 1; padding: 9px; border: none; background: transparent; border-radius: 8px;
+    font-size: 14px; color: var(--muted); cursor: pointer; }
+  .tabs button.active { background: var(--card); color: var(--primary); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .field input, .field textarea, .field select {
+    width: 100%; padding: 11px 13px; border: 1px solid var(--border); border-radius: 9px;
+    font-size: 14px; outline: none; font-family: inherit; background: #fff;
+  }
+  .field textarea { resize: vertical; min-height: 80px; }
+  .field input:focus, .field textarea:focus, .field select:focus {
+    border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 10px 16px; border: none; border-radius: 9px; font-size: 14px; cursor: pointer;
+    transition: all .15s; background: var(--primary); color: #fff; font-family: inherit; }
+  .btn:hover { background: var(--primary-dark); }
+  .btn:disabled { opacity: .55; cursor: not-allowed; }
+  .btn-block { width: 100%; padding: 12px; font-size: 15px; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; border-radius: 7px; }
+  .btn-ghost { background: #fff; color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--bg); }
+  .btn-danger { background: var(--danger); } .btn-danger:hover { background: #b91c1c; }
+  .btn-success { background: var(--success); } .btn-success:hover { background: #15803d; }
+  .btn-warning { background: var(--warning); } .btn-warning:hover { background: #b45309; }
+  .hint { margin-top: 16px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.6; }
+
+  /* ---------- 主界面 ---------- */
+  .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 0 24px; height: 60px;
+    display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+  .brand { font-size: 17px; font-weight: 700; color: var(--primary); }
+  .user-area { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--muted); }
+  .role-tag { padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #dbeafe; color: #1d4ed8; }
+  .role-tag.admin { background: #fef3c7; color: #b45309; }
+
+  .container { max-width: 1120px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
+  .panel { background: var(--card); border-radius: 14px; padding: 20px; box-shadow: 0 1px 3px rgba(15,23,42,.06); }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .panel h2 { margin: 0; font-size: 17px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 16px; }
+  .product-card { border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .product-name { font-weight: 600; font-size: 15px; }
+  .product-sku { font-size: 12px; color: var(--muted); }
+  .product-price { font-size: 20px; font-weight: 700; color: var(--danger); }
+  .product-stock { font-size: 12px; color: var(--muted); }
+  .product-actions { display: flex; gap: 8px; align-items: center; margin-top: auto; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 11px 10px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  .order-no { font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: nowrap; }
+  .status { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
+  .status.CREATED { background: #fef3c7; color: #b45309; }
+  .status.PAID { background: #dbeafe; color: #1d4ed8; }
+  .status.SHIPPED { background: #e0e7ff; color: #4338ca; }
+  .status.COMPLETED { background: #dcfce7; color: #15803d; }
+  .status.CANCELLED { background: #f3f4f6; color: #6b7280; }
+  .status.REFUNDED { background: #fee2e2; color: #b91c1c; }
+  .refund-tag { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; font-size: 11px; }
+  .refund-tag.PENDING { background: #fef3c7; color: #b45309; }
+  .refund-tag.APPROVED { background: #fee2e2; color: #b91c1c; }
+  .refund-tag.REJECTED { background: #f3f4f6; color: #6b7280; }
+  .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .empty { text-align: center; padding: 32px; color: var(--muted); font-size: 13px; }
+  .muted { color: var(--muted); font-size: 12px; }
+
+  /* ---------- 营收卡片 ---------- */
+  .revenue-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .revenue-card { background: var(--bg); border-radius: 12px; padding: 16px; }
+  .revenue-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .revenue-value { font-size: 22px; font-weight: 700; }
+  .revenue-value.green { color: var(--success); }
+  .revenue-value.red { color: var(--danger); }
+  .revenue-value.blue { color: var(--primary); }
+
+  /* ---------- 弹窗 ---------- */
+  .modal { position: fixed; inset: 0; background: rgba(15,23,42,.55); display: flex; align-items: center;
+    justify-content: center; padding: 20px; z-index: 50; }
+  .modal-card { background: #fff; border-radius: 16px; width: 100%; max-width: 440px; padding: 24px;
+    box-shadow: 0 24px 60px rgba(15,23,42,.3); max-height: 90vh; overflow-y: auto; }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .modal-head h3 { margin: 0; font-size: 17px; }
+  .modal-close { border: none; background: transparent; font-size: 22px; line-height: 1; color: var(--muted); cursor: pointer; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 8px; }
+  .modal-actions .btn { flex: 1; }
+
+  /* ---------- 收银台 ---------- */
+  .pay-card { max-width: 420px; text-align: center; }
+  .pay-title { font-size: 14px; color: var(--muted); }
+  .pay-amount { font-size: 38px; font-weight: 800; color: var(--text); margin: 10px 0 4px; }
+  .pay-amount span { font-size: 22px; margin-right: 2px; }
+  .pay-orderno { font-size: 12px; color: var(--muted); margin-bottom: 18px; word-break: break-all; }
+  .pay-methods { display: flex; gap: 10px; margin-bottom: 16px; }
+  .pay-method { flex: 1; border: 1.5px solid var(--border); border-radius: 10px; padding: 12px 6px;
+    font-size: 13px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .pay-method input { display: none; }
+  .pay-method.active { border-color: var(--primary); background: #eff6ff; color: var(--primary); font-weight: 600; }
+  .pay-method .dot { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 14px; background: #e5e7eb; }
+  .pay-method.active .dot { background: var(--primary); color: #fff; }
+  .pay-loading { padding: 24px 0; }
+  .spinner { width: 34px; height: 34px; border: 3px solid #e5e7eb; border-top-color: var(--primary);
+    border-radius: 50%; margin: 0 auto 12px; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .pay-success { padding: 20px 0; }
+  .pay-success .icon { width: 56px; height: 56px; border-radius: 50%; background: #dcfce7; color: var(--success);
+    font-size: 30px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+
+  /* ---------- toast ---------- */
+  .toast { position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%) translateY(20px);
+    background: #111827; color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px;
+    opacity: 0; pointer-events: none; transition: all .25s; max-width: 90vw; z-index: 100; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.error { background: var(--danger); }
+  .toast.success { background: var(--success); }
+</style>
+</head>
+<body>
+
+<!-- ==================== 登录 / 注册 ==================== -->
+<div class="auth-view" id="authView">
+  <div class="auth-card">
+    <h1>📦 订单系统</h1>
+    <p class="subtitle">登录后即可下单、支付、管理订单</p>
+    <div class="tabs">
+      <button type="button" class="active" data-tab="login">登录</button>
+      <button type="button" data-tab="register">注册</button>
+    </div>
+    <form id="loginForm">
+      <div class="field"><label>用户名</label><input name="username" autocomplete="username" required placeholder="请输入用户名"></div>
+      <div class="field"><label>密码</label><input name="password" type="password" autocomplete="current-password" required placeholder="请输入密码"></div>
+      <button class="btn btn-block" type="submit" id="loginBtn">登录</button>
+      <p class="hint">管理员账号：admin / admin123</p>
+    </form>
+    <form id="registerForm" class="hidden">
+      <div class="field"><label>用户名</label><input name="username" autocomplete="username" required placeholder="3-50 位字母、数字或下划线"></div>
+      <div class="field"><label>密码</label><input name="password" type="password" autocomplete="new-password" required placeholder="至少 6 位"></div>
+      <div class="field"><label>昵称（可选）</label><input name="nickname" placeholder="显示名称"></div>
+      <button class="btn btn-block" type="submit" id="registerBtn">注册并登录</button>
+      <p class="hint">注册成功后会自动登录</p>
+    </form>
+  </div>
+</div>
+
+<!-- ==================== 主界面 ==================== -->
+<div id="mainView" class="hidden">
+  <div class="topbar">
+    <div class="brand">📦 订单系统</div>
+    <div class="user-area">
+      <span id="userLabel"></span>
+      <span class="role-tag" id="roleTag"></span>
+      <button class="btn btn-ghost btn-sm" id="logoutBtn">退出</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- 管理员：营收统计 -->
+    <section class="panel hidden" id="revenuePanel">
+      <div class="panel-head">
+        <h2>每日营收</h2>
+        <div class="toolbar">
+          <input type="date" id="revenueDate" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit">
+          <button class="btn btn-sm" id="revenueQuery">查询</button>
+        </div>
+      </div>
+      <div class="revenue-grid" id="revenueGrid">
+        <div class="revenue-card"><div class="revenue-label">支付金额</div><div class="revenue-value blue">¥0.00</div></div>
+        <div class="revenue-card"><div class="revenue-label">退款金额</div><div class="revenue-value red">¥0.00</div></div>
+        <div class="revenue-card"><div class="revenue-label">净收入</div><div class="revenue-value green">¥0.00</div></div>
+        <div class="revenue-card"><div class="revenue-label">支付 / 新建订单</div><div class="revenue-value">0 / 0</div></div>
+      </div>
+    </section>
+
+    <!-- 管理员：待处理退款 -->
+    <section class="panel hidden" id="refundPanel">
+      <div class="panel-head">
+        <h2>待处理退款申请 <span class="refund-tag PENDING" id="pendingCount">0</span></h2>
+        <button class="btn btn-ghost btn-sm" id="refreshRefunds">刷新</button>
+      </div>
+      <div id="refundList"></div>
+    </section>
+
+    <!-- 商品 -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>商品列表</h2>
+        <button class="btn btn-ghost btn-sm" id="refreshProducts">刷新</button>
+      </div>
+      <div class="product-grid" id="productList"></div>
+    </section>
+
+    <!-- 订单 -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2 id="orderPanelTitle">我的订单</h2>
+        <div class="toolbar">
+          <select id="statusFilter" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit">
+            <option value="">全部状态</option>
+            <option value="CREATED">待支付</option>
+            <option value="PAID">已支付</option>
+            <option value="SHIPPED">已发货</option>
+            <option value="COMPLETED">已完成</option>
+            <option value="CANCELLED">已取消</option>
+            <option value="REFUNDED">已退款</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" id="refreshOrders">刷新</button>
+        </div>
+      </div>
+      <div id="orderList"></div>
+    </section>
+  </div>
+</div>
+
+<!-- ==================== 下单弹窗 ==================== -->
+<div class="modal hidden" id="orderModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>填写收货信息</h3>
+      <button class="modal-close" data-close="orderModal">×</button>
+    </div>
+    <div class="muted" id="orderSummary" style="margin-bottom:14px"></div>
+    <div class="field"><label>收货人</label><input id="receiverName" maxlength="50" placeholder="请输入收货人姓名"></div>
+    <div class="field"><label>联系电话</label><input id="receiverPhone" maxlength="20" placeholder="手机号或固定电话"></div>
+    <div class="field"><label>收货地址</label><textarea id="receiverAddress" maxlength="255" placeholder="省 / 市 / 区 / 详细地址"></textarea></div>
+    <div class="field"><label>订单备注（可选）</label><input id="orderRemark" maxlength="255" placeholder="例如：尽快发货"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" data-close="orderModal">取消</button>
+      <button class="btn" id="submitOrderBtn">提交订单</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 收银台 ==================== -->
+<div class="modal hidden" id="payModal">
+  <div class="modal-card pay-card">
+    <div class="modal-head">
+      <h3>收银台</h3>
+      <button class="modal-close" data-close="payModal">×</button>
+    </div>
+    <div id="payForm">
+      <div class="pay-title">订单金额</div>
+      <div class="pay-amount"><span>¥</span><span id="payAmount">0.00</span></div>
+      <div class="pay-orderno" id="payOrderNo"></div>
+      <div class="pay-methods">
+        <label class="pay-method active" data-method="ALIPAY">
+          <input type="radio" name="payMethod" value="ALIPAY" checked><span class="dot">支</span>支付宝
+        </label>
+        <label class="pay-method" data-method="WECHAT">
+          <input type="radio" name="payMethod" value="WECHAT"><span class="dot">微</span>微信支付
+        </label>
+        <label class="pay-method" data-method="MOCK">
+          <input type="radio" name="payMethod" value="MOCK"><span class="dot">卡</span>银行卡
+        </label>
+      </div>
+      <div class="field" style="text-align:left"><label>支付账号（演示用，随便填）</label>
+        <input id="payAccount" placeholder="例如 13800138000"></div>
+      <button class="btn btn-block" id="confirmPayBtn">确认支付</button>
+    </div>
+    <div class="pay-loading hidden" id="payLoading">
+      <div class="spinner"></div>
+      <div class="muted">正在处理支付，请稍候...</div>
+    </div>
+    <div class="pay-success hidden" id="paySuccess">
+      <div class="icon">✓</div>
+      <div style="font-size:16px;font-weight:600;margin-bottom:4px">支付成功</div>
+      <div class="muted" id="paySuccessInfo"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 退款申请弹窗 ==================== -->
+<div class="modal hidden" id="refundModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>申请退款</h3>
+      <button class="modal-close" data-close="refundModal">×</button>
+    </div>
+    <div class="muted" id="refundSummary" style="margin-bottom:14px"></div>
+    <div class="field"><label>退款理由</label>
+      <textarea id="refundReason" maxlength="255" placeholder="例如：商品与描述不符 / 不想要了 / 配送太慢"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" data-close="refundModal">取消</button>
+      <button class="btn btn-danger" id="submitRefundBtn">提交申请</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 管理员处理退款弹窗 ==================== -->
+<div class="modal hidden" id="handleModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="handleTitle">处理退款</h3>
+      <button class="modal-close" data-close="handleModal">×</button>
+    </div>
+    <div class="muted" id="handleSummary" style="margin-bottom:14px"></div>
+    <div class="field"><label>处理备注（拒绝时建议填写）</label>
+      <textarea id="handleRemark" maxlength="255" placeholder="说明拒绝原因或处理备注"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" data-close="handleModal">取消</button>
+      <button class="btn" id="handleConfirmBtn">确认</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  const STATUS_TEXT = { CREATED:'待支付', PAID:'已支付', SHIPPED:'已发货', COMPLETED:'已完成', CANCELLED:'已取消', REFUNDED:'已退款' };
+  const REFUND_TEXT = { NONE:'', PENDING:'退款审核中', APPROVED:'已退款', REJECTED:'退款被拒绝' };
+
+  const state = {
+    token: localStorage.getItem('os_token') || '',
+    user: JSON.parse(localStorage.getItem('os_user') || 'null'),
+    pendingProduct: null,
+    payingOrder: null,
+    refundOrderNo: null,
+    handleAction: null,
+    handleOrderNo: null
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const money = (v) => Number(v || 0).toFixed(2);
+
+  function toast(message, type) {
+    const el = $('toast');
+    el.textContent = message;
+    el.className = 'toast show' + (type ? ' ' + type : '');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { el.className = 'toast'; }, 2800);
+  }
+
+  async function api(path, options) {
+    const opts = options || {};
+    const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+    if (state.token) headers.Authorization = 'Bearer ' + state.token;
+    let res;
+    try { res = await fetch(path, Object.assign({}, opts, { headers: headers })); }
+    catch (e) { throw new Error('无法连接服务器，请确认后端已启动'); }
+    if (res.status === 401) { logout(true); throw new Error('登录已失效，请重新登录'); }
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || (body.code && body.code !== 200)) {
+      throw new Error(body.message || ('请求失败（HTTP ' + res.status + '）'));
+    }
+    return body.data;
+  }
+
+  /* ---------------- 登录态 ---------------- */
+  function applyLogin(token, user) {
+    state.token = token; state.user = user;
+    localStorage.setItem('os_token', token);
+    localStorage.setItem('os_user', JSON.stringify(user));
+    enterMain();
+  }
+  function enterMain() {
+    renderUser();
+    $('authView').classList.add('hidden');
+    $('mainView').classList.remove('hidden');
+    const admin = isAdmin();
+    $('revenuePanel').classList.toggle('hidden', !admin);
+    $('refundPanel').classList.toggle('hidden', !admin);
+    $('orderPanelTitle').textContent = admin ? '全部订单' : '我的订单';
+    if (admin) { $('revenueDate').value = new Date().toISOString().slice(0, 10); loadRevenue(); loadPendingRefunds(); }
+    loadProducts(); loadOrders();
+  }
+  function logout(silent) {
+    state.token = ''; state.user = null;
+    localStorage.removeItem('os_token'); localStorage.removeItem('os_user');
+    $('mainView').classList.add('hidden');
+    $('authView').classList.remove('hidden');
+    if (!silent) toast('已退出登录');
+  }
+  function renderUser() {
+    if (!state.user) return;
+    $('userLabel').textContent = state.user.nickname || state.user.username;
+    const tag = $('roleTag');
+    tag.textContent = state.user.role === 'ADMIN' ? '管理员' : '普通用户';
+    tag.className = 'role-tag' + (state.user.role === 'ADMIN' ? ' admin' : '');
+  }
+  function isAdmin() { return state.user && state.user.role === 'ADMIN'; }
+
+  /* ---------------- 认证 ---------------- */
+  document.querySelectorAll('.tabs button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tabs button').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const isLogin = btn.dataset.tab === 'login';
+      $('loginForm').classList.toggle('hidden', !isLogin);
+      $('registerForm').classList.toggle('hidden', isLogin);
+    });
+  });
+
+  $('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target; const btn = $('loginBtn'); btn.disabled = true;
+    try {
+      const data = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({
+        username: f.username.value.trim(), password: f.password.value }) });
+      applyLogin(data.accessToken, data.user);
+      toast('欢迎回来，' + (data.user.nickname || data.user.username), 'success');
+    } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+  });
+
+  $('registerForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target; const btn = $('registerBtn'); btn.disabled = true;
+    try {
+      const payload = { username: f.username.value.trim(), password: f.password.value };
+      if (f.nickname.value.trim()) payload.nickname = f.nickname.value.trim();
+      await api('/api/auth/register', { method: 'POST', body: JSON.stringify(payload) });
+      const login = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({
+        username: payload.username, password: payload.password }) });
+      applyLogin(login.accessToken, login.user);
+      toast('注册成功，已自动登录', 'success');
+    } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+  });
+
+  $('logoutBtn').addEventListener('click', async () => {
+    try { await api('/api/auth/logout', { method: 'POST' }); } catch (e) {}
+    logout();
+  });
+
+  /* ---------------- 商品 ---------------- */
+  async function loadProducts() {
+    const box = $('productList');
+    box.innerHTML = '<div class="empty">加载中...</div>';
+    try {
+      const page = await api('/api/products?page=1&size=50');
+      if (!page.records || page.records.length === 0) { box.innerHTML = '<div class="empty">暂无商品</div>'; return; }
+      box.innerHTML = page.records.map((p) => {
+        const offSale = p.status !== 'ON_SALE';
+        const soldOut = p.stock <= 0;
+        return '<div class="product-card">' +
+          '<div class="product-name">' + esc(p.name) + '</div>' +
+          '<div class="product-sku">SKU：' + esc(p.sku) + '</div>' +
+          '<div class="product-price">¥' + money(p.price) + '</div>' +
+          '<div class="product-stock">库存：' + p.stock + (offSale ? '（已下架）' : '') + '</div>' +
+          '<div class="product-actions">' +
+            '<input class="qty" type="number" min="1" max="' + Math.max(p.stock, 1) + '" value="1" data-qty="' + p.id + '" style="width:64px;padding:7px 9px;border:1px solid var(--border);border-radius:7px">' +
+            '<button class="btn btn-sm" data-buy="' + p.id + '"' + (offSale || soldOut ? ' disabled' : '') + '>' +
+              (soldOut ? '已售罄' : '立即下单') + '</button>' +
+          '</div></div>';
+      }).join('');
+      box.querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', () => openOrderModal(Number(b.dataset.buy), page.records)));
+    } catch (err) { box.innerHTML = '<div class="empty">' + esc(err.message) + '</div>'; }
+  }
+
+  /* ---------------- 下单 ---------------- */
+  function openOrderModal(productId, products) {
+    const p = products.find((x) => x.id === productId);
+    if (!p) return;
+    const qty = Math.max(1, Number(document.querySelector('[data-qty="' + productId + '"]').value) || 1);
+    state.pendingProduct = { id: p.id, name: p.name, price: Number(p.price), qty: qty };
+    $('orderSummary').textContent = p.name + ' × ' + qty + '，合计 ¥' + money(Number(p.price) * qty);
+    $('receiverName').value = '';
+    $('receiverPhone').value = '';
+    $('receiverAddress').value = '';
+    $('orderRemark').value = '';
+    $('orderModal').classList.remove('hidden');
+  }
+
+  $('submitOrderBtn').addEventListener('click', async () => {
+    const btn = $('submitOrderBtn');
+    const name = $('receiverName').value.trim();
+    const phone = $('receiverPhone').value.trim();
+    const address = $('receiverAddress').value.trim();
+    if (!name) return toast('请填写收货人', 'error');
+    if (!/^[0-9+\-]{6,20}$/.test(phone)) return toast('联系电话格式不正确', 'error');
+    if (!address) return toast('请填写收货地址', 'error');
+
+    btn.disabled = true;
+    try {
+      const order = await api('/api/orders', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'web-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) },
+        body: JSON.stringify({
+          items: [{ productId: state.pendingProduct.id, quantity: state.pendingProduct.qty }],
+          receiverName: name, receiverPhone: phone, receiverAddress: address,
+          remark: $('orderRemark').value.trim() || undefined
+        })
+      });
+      $('orderModal').classList.add('hidden');
+      toast('下单成功，正在打开收银台', 'success');
+      loadProducts(); loadOrders();
+      setTimeout(() => openPayModal(order), 400);
+    } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+  });
+
+  /* ---------------- 收银台 ---------------- */
+  function openPayModal(order) {
+    state.payingOrder = order;
+    $('payAmount').textContent = money(order.totalAmount);
+    $('payOrderNo').textContent = '订单号：' + order.orderNo;
+    $('payAccount').value = '';
+    $('payForm').classList.remove('hidden');
+    $('payLoading').classList.add('hidden');
+    $('paySuccess').classList.add('hidden');
+    $('confirmPayBtn').disabled = false;
+    $('payModal').classList.remove('hidden');
+  }
+
+  document.querySelectorAll('.pay-method').forEach((el) => {
+    el.addEventListener('click', () => {
+      document.querySelectorAll('.pay-method').forEach((x) => x.classList.remove('active'));
+      el.classList.add('active');
+      el.querySelector('input').checked = true;
+    });
+  });
+
+  $('confirmPayBtn').addEventListener('click', async () => {
+    if (!state.payingOrder) return;
+    const method = document.querySelector('input[name="payMethod"]:checked').value;
+    $('payForm').classList.add('hidden');
+    $('payLoading').classList.remove('hidden');
+    try {
+      await new Promise((r) => setTimeout(r, 1200));
+      const paid = await api('/api/orders/' + encodeURIComponent(state.payingOrder.orderNo) + '/pay', {
+        method: 'POST', body: JSON.stringify({ channel: method })
+      });
+      $('payLoading').classList.add('hidden');
+      $('paySuccess').classList.remove('hidden');
+      $('paySuccessInfo').textContent = '订单 ' + paid.orderNo + ' · ¥' + money(paid.totalAmount);
+      loadOrders(); loadProducts();
+      setTimeout(() => $('payModal').classList.add('hidden'), 1600);
+    } catch (err) {
+      $('payLoading').classList.add('hidden');
+      $('payForm').classList.remove('hidden');
+      toast(err.message, 'error');
+    }
+  });
+
+  /* ---------------- 订单 ---------------- */
+  async function loadOrders() {
+    const box = $('orderList');
+    box.innerHTML = '<div class="empty">加载中...</div>';
+    try {
+      const status = $('statusFilter').value;
+      const query = status ? ('?status=' + status + '&page=1&size=20') : '?page=1&size=20';
+      const page = await api('/api/orders' + query);
+      if (!page.records || page.records.length === 0) { box.innerHTML = '<div class="empty">暂无订单</div>'; return; }
+
+      const rows = page.records.map((o) => {
+        const actions = [];
+        if (o.status === 'CREATED') {
+          actions.push('<button class="btn btn-sm btn-success" data-act="pay" data-no="' + o.orderNo + '">去支付</button>');
+          actions.push('<button class="btn btn-sm btn-ghost" data-act="cancel" data-no="' + o.orderNo + '">取消</button>');
+        }
+        if ((o.status === 'PAID' || o.status === 'SHIPPED' || o.status === 'COMPLETED')
+            && o.refundStatus !== 'PENDING' && o.refundStatus !== 'APPROVED') {
+          actions.push('<button class="btn btn-sm btn-ghost" data-act="refund-apply" data-no="' + o.orderNo + '">申请退款</button>');
+        }
+        if (o.status === 'PAID' && isAdmin()) {
+          actions.push('<button class="btn btn-sm" data-act="ship" data-no="' + o.orderNo + '">发货</button>');
+        }
+        if (o.status === 'SHIPPED') {
+          actions.push('<button class="btn btn-sm btn-success" data-act="complete" data-no="' + o.orderNo + '">确认收货</button>');
+        }
+        if (o.refundStatus === 'PENDING' && isAdmin()) {
+          actions.push('<button class="btn btn-sm btn-warning" data-act="approve" data-no="' + o.orderNo + '">同意退款</button>');
+          actions.push('<button class="btn btn-sm btn-danger" data-act="reject" data-no="' + o.orderNo + '">拒绝</button>');
+        }
+
+        const refundTag = o.refundStatus && o.refundStatus !== 'NONE'
+          ? '<div class="refund-tag ' + o.refundStatus + '">' + (REFUND_TEXT[o.refundStatus] || o.refundStatus) + '</div>' +
+            (o.refundReason ? '<div class="muted" style="margin-top:4px">理由：' + esc(o.refundReason) + '</div>' : '') +
+            (o.refundRemark ? '<div class="muted">备注：' + esc(o.refundRemark) + '</div>' : '')
+          : '';
+
+        return '<tr>' +
+          '<td><div class="order-no">' + esc(o.orderNo) + '</div>' +
+            '<div class="muted">' + formatTime(o.createdAt) + '</div></td>' +
+          '<td>' + (o.items || []).map((i) => esc(i.productName) + ' ×' + i.quantity).join('<br>') + '</td>' +
+          '<td>' + esc(o.receiverName) + '<div class="muted">' + esc(o.receiverPhone) + '</div>' +
+            '<div class="muted">' + esc(o.receiverAddress) + '</div></td>' +
+          '<td>¥' + money(o.totalAmount) + '</td>' +
+          '<td><span class="status ' + o.status + '">' + (STATUS_TEXT[o.status] || o.status) + '</span>' + refundTag + '</td>' +
+          '<td><div class="row-actions">' + (actions.join('') || '<span class="muted">—</span>') + '</div></td>' +
+        '</tr>';
+      }).join('');
+
+      box.innerHTML = '<div style="overflow-x:auto"><table><thead><tr>' +
+        '<th>订单 / 时间</th><th>商品</th><th>收货信息</th><th>金额</th><th>状态</th><th>操作</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+
+      box.querySelectorAll('[data-act]').forEach((btn) => {
+        btn.addEventListener('click', () => orderAction(btn.dataset.act, btn.dataset.no, btn, page.records));
+      });
+    } catch (err) { box.innerHTML = '<div class="empty">' + esc(err.message) + '</div>'; }
+  }
+
+  async function orderAction(action, orderNo, btn, records) {
+    if (action === 'pay') {
+      const order = records.find((o) => o.orderNo === orderNo);
+      if (order) openPayModal(order);
+      return;
+    }
+    if (action === 'refund-apply') {
+      const order = records.find((o) => o.orderNo === orderNo);
+      state.refundOrderNo = orderNo;
+      $('refundSummary').textContent = '订单 ' + orderNo + ' · ¥' + money(order ? order.totalAmount : 0);
+      $('refundReason').value = '';
+      $('refundModal').classList.remove('hidden');
+      return;
+    }
+    if (action === 'approve' || action === 'reject') {
+      state.handleAction = action;
+      state.handleOrderNo = orderNo;
+      $('handleTitle').textContent = action === 'approve' ? '同意退款' : '拒绝退款';
+      $('handleSummary').textContent = '订单 ' + orderNo;
+      $('handleRemark').value = '';
+      $('handleConfirmBtn').className = 'btn ' + (action === 'approve' ? 'btn-success' : 'btn-danger');
+      $('handleConfirmBtn').textContent = action === 'approve' ? '确认同意' : '确认拒绝';
+      $('handleModal').classList.remove('hidden');
+      return;
+    }
+
+    const map = {
+      cancel: { path: '/cancel', ok: '订单已取消，库存已归还' },
+      ship: { path: '/ship', ok: '已发货' },
+      complete: { path: '/complete', ok: '已确认收货' }
+    };
+    const conf = map[action];
+    if (!conf) return;
+    btn.disabled = true;
+    try {
+      await api('/api/orders/' + encodeURIComponent(orderNo) + conf.path, { method: 'POST' });
+      toast(conf.ok, 'success');
+      loadOrders(); loadProducts();
+      if (isAdmin()) loadPendingRefunds();
+    } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+  }
+
+  /* ---------------- 退款 ---------------- */
+  $('submitRefundBtn').addEventListener('click', async () => {
+    const reason = $('refundReason').value.trim();
+    if (!reason) return toast('请填写退款理由', 'error');
+    const btn = $('submitRefundBtn'); btn.disabled = true;
+    try {
+      await api('/api/orders/' + encodeURIComponent(state.refundOrderNo) + '/refund-request', {
+        method: 'POST', body: JSON.stringify({ reason: reason })
+      });
+      $('refundModal').classList.add('hidden');
+      toast('退款申请已提交，等待管理员处理', 'success');
+      loadOrders();
+    } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+  });
+
+  $('handleConfirmBtn').addEventListener('click', async () => {
+    const btn = $('handleConfirmBtn'); btn.disabled = true;
+    const isApprove = state.handleAction === 'approve';
+    try {
+      await api('/api/orders/' + encodeURIComponent(state.handleOrderNo) +
+        (isApprove ? '/refund/approve' : '/refund/reject'), {
+        method: 'POST', body: JSON.stringify({ remark: $('handleRemark').value.trim() || undefined })
+      });
+      $('handleModal').classList.add('hidden');
+      toast(isApprove ? '已同意退款' : '已拒绝退款', 'success');
+      loadOrders(); loadPendingRefunds(); loadRevenue(); loadProducts();
+    } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+  });
+
+  async function loadPendingRefunds() {
+    const box = $('refundList');
+    box.innerHTML = '<div class="empty">加载中...</div>';
+    try {
+      const list = await api('/api/orders/refunds/pending');
+      $('pendingCount').textContent = String(list.length);
+      if (!list.length) { box.innerHTML = '<div class="empty">暂无待处理退款申请</div>'; return; }
+      box.innerHTML = '<div style="overflow-x:auto"><table><thead><tr>' +
+        '<th>订单号</th><th>用户</th><th>金额</th><th>退款理由</th><th>申请时间</th><th>操作</th>' +
+        '</tr></thead><tbody>' + list.map((o) =>
+          '<tr><td class="order-no">' + esc(o.orderNo) + '</td>' +
+          '<td>' + esc(o.receiverName) + '<div class="muted">' + esc(o.receiverPhone) + '</div></td>' +
+          '<td>¥' + money(o.totalAmount) + '</td>' +
+          '<td>' + esc(o.refundReason || '—') + '</td>' +
+          '<td>' + formatTime(o.refundRequestedAt) + '</td>' +
+          '<td><div class="row-actions">' +
+            '<button class="btn btn-sm btn-success" data-approve="' + o.orderNo + '">同意</button>' +
+            '<button class="btn btn-sm btn-danger" data-reject="' + o.orderNo + '">拒绝</button>' +
+          '</div></td></tr>').join('') +
+        '</tbody></table></div>';
+
+      box.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', () => {
+        state.handleAction = 'approve'; state.handleOrderNo = b.dataset.approve;
+        $('handleTitle').textContent = '同意退款';
+        $('handleSummary').textContent = '订单 ' + b.dataset.approve;
+        $('handleRemark').value = '';
+        $('handleConfirmBtn').className = 'btn btn-success';
+        $('handleConfirmBtn').textContent = '确认同意';
+        $('handleModal').classList.remove('hidden');
+      }));
+      box.querySelectorAll('[data-reject]').forEach((b) => b.addEventListener('click', () => {
+        state.handleAction = 'reject'; state.handleOrderNo = b.dataset.reject;
+        $('handleTitle').textContent = '拒绝退款';
+        $('handleSummary').textContent = '订单 ' + b.dataset.reject;
+        $('handleRemark').value = '';
+        $('handleConfirmBtn').className = 'btn btn-danger';
+        $('handleConfirmBtn').textContent = '确认拒绝';
+        $('handleModal').classList.remove('hidden');
+      }));
+    } catch (err) { box.innerHTML = '<div class="empty">' + esc(err.message) + '</div>'; }
+  }
+
+  /* ---------------- 营收 ---------------- */
+  async function loadRevenue() {
+    const date = $('revenueDate').value;
+    try {
+      const r = await api('/api/admin/revenue' + (date ? '?date=' + date : ''));
+      $('revenueGrid').innerHTML =
+        '<div class="revenue-card"><div class="revenue-label">支付金额</div><div class="revenue-value blue">¥' + money(r.paidAmount) + '</div></div>' +
+        '<div class="revenue-card"><div class="revenue-label">退款金额</div><div class="revenue-value red">¥' + money(r.refundAmount) + '</div></div>' +
+        '<div class="revenue-card"><div class="revenue-label">净收入</div><div class="revenue-value green">¥' + money(r.netAmount) + '</div></div>' +
+        '<div class="revenue-card"><div class="revenue-label">支付 / 新建订单</div><div class="revenue-value">' + r.paidOrderCount + ' / ' + r.createdOrderCount + '</div></div>';
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
+  /* ---------------- 工具 ---------------- */
+  function esc(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function formatTime(v) {
+    if (!v) return '—';
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return String(v);
+    const p = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  document.querySelectorAll('[data-close]').forEach((el) => {
+    el.addEventListener('click', () => $(el.dataset.close).classList.add('hidden'));
+  });
+  document.querySelectorAll('.modal').forEach((m) => {
+    m.addEventListener('click', (e) => { if (e.target === m) m.classList.add('hidden'); });
+  });
+
+  $('refreshProducts').addEventListener('click', loadProducts);
+  $('refreshOrders').addEventListener('click', loadOrders);
+  $('refreshRefunds').addEventListener('click', loadPendingRefunds);
+  $('statusFilter').addEventListener('change', loadOrders);
+  $('revenueQuery').addEventListener('click', loadRevenue);
+  $('revenueDate').addEventListener('change', loadRevenue);
+
+  /* ---------------- 启动 ---------------- */
+  if (state.token && state.user) {
+    api('/api/orders?page=1&size=1')
+      .then(() => enterMain())
+      .catch(() => logout(true));
+  }
+})();
+</script>
+</body>
+</html>

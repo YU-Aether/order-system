@@ -13,9 +13,11 @@ import com.team.orderserver.module.order.dto.OrderItemRequest;
 import com.team.orderserver.module.order.dto.OrderItemResponse;
 import com.team.orderserver.module.order.dto.OrderQuery;
 import com.team.orderserver.module.order.dto.OrderResponse;
+import com.team.orderserver.module.order.dto.RevenueResponse;
 import com.team.orderserver.module.order.entity.Order;
 import com.team.orderserver.module.order.entity.OrderItem;
 import com.team.orderserver.module.order.entity.OrderStatus;
+import com.team.orderserver.module.order.entity.RefundStatus;
 import com.team.orderserver.module.order.repository.OrderItemRepository;
 import com.team.orderserver.module.order.repository.OrderRepository;
 import com.team.orderserver.module.payment.entity.PaymentChannel;
@@ -40,6 +42,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -232,18 +235,127 @@ public class OrderServiceImpl implements OrderService {
             Order order = orderRepository.findByOrderNoForUpdate(orderNo)
                     .orElseThrow(() -> new BusinessException(ResultCode.ORDER_NOT_FOUND));
             stateMachine.transit(order, OrderStatus.REFUNDED);
+            order.setRefundStatus(RefundStatus.APPROVED);
+            order.setRefundedAt(LocalDateTime.now());
             orderRepository.save(order);
-
-            paymentRecordRepository.findByOrderNo(orderNo).ifPresent(record -> {
-                record.setStatus(PaymentStatus.REFUNDED);
-                paymentRecordRepository.save(record);
-            });
+            markPaymentRefunded(orderNo);
             log.info("订单已退款 | orderNo={} | amount={}", orderNo, order.getTotalAmount());
             return toResponse(order, orderItemRepository.findByOrderIdOrderByIdAsc(order.getId()));
         });
         OrderResponse result = requireResult(response, ResultCode.ORDER_STATUS_INVALID);
         orderCacheService.evict(orderNo);
         return result;
+    }
+
+    @Override
+    public OrderResponse applyRefund(Long userId, String orderNo, String reason) {
+        OrderResponse response = transactionTemplate.execute(status -> {
+            Order order = orderRepository.findByOrderNoForUpdate(orderNo)
+                    .orElseThrow(() -> new BusinessException(ResultCode.ORDER_NOT_FOUND));
+            checkOwnership(order.getUserId(), userId, false);
+
+            OrderStatus current = order.getStatus();
+            if (current != OrderStatus.PAID && current != OrderStatus.SHIPPED
+                    && current != OrderStatus.COMPLETED) {
+                throw new BusinessException(ResultCode.ORDER_STATUS_INVALID, "当前订单状态不支持申请退款");
+            }
+            if (order.getRefundStatus() == RefundStatus.PENDING) {
+                throw new BusinessException(ResultCode.CONFLICT, "退款申请已提交，请等待管理员处理");
+            }
+            if (order.getRefundStatus() == RefundStatus.APPROVED) {
+                throw new BusinessException(ResultCode.ORDER_STATUS_INVALID, "该订单已退款");
+            }
+
+            order.setRefundStatus(RefundStatus.PENDING);
+            order.setRefundReason(reason);
+            order.setRefundRemark(null);
+            order.setRefundRequestedAt(LocalDateTime.now());
+            orderRepository.save(order);
+            log.info("用户申请退款 | orderNo={} | userId={} | reason={}", orderNo, userId, reason);
+            return toResponse(order, orderItemRepository.findByOrderIdOrderByIdAsc(order.getId()));
+        });
+        OrderResponse result = requireResult(response, ResultCode.ORDER_STATUS_INVALID);
+        orderCacheService.evict(orderNo);
+        return result;
+    }
+
+    @Override
+    public List<OrderResponse> pendingRefunds() {
+        List<Order> orders = orderRepository.findByRefundStatusOrderByRefundRequestedAtAsc(RefundStatus.PENDING);
+        if (orders.isEmpty()) {
+            return List.of();
+        }
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        Map<Long, List<OrderItem>> itemMap = orderItemRepository.findByOrderIdIn(orderIds).stream()
+                .collect(Collectors.groupingBy(OrderItem::getOrderId));
+        return orders.stream()
+                .map(order -> toResponse(order, itemMap.getOrDefault(order.getId(), List.of())))
+                .toList();
+    }
+
+    @Override
+    public OrderResponse approveRefund(String orderNo, String remark) {
+        OrderResponse response = transactionTemplate.execute(status -> {
+            Order order = orderRepository.findByOrderNoForUpdate(orderNo)
+                    .orElseThrow(() -> new BusinessException(ResultCode.ORDER_NOT_FOUND));
+            if (order.getRefundStatus() != RefundStatus.PENDING) {
+                throw new BusinessException(ResultCode.ORDER_STATUS_INVALID, "该订单没有待处理的退款申请");
+            }
+            stateMachine.transit(order, OrderStatus.REFUNDED);
+            order.setRefundStatus(RefundStatus.APPROVED);
+            order.setRefundRemark(remark);
+            order.setRefundedAt(LocalDateTime.now());
+            orderRepository.save(order);
+            markPaymentRefunded(orderNo);
+            log.info("退款申请已通过 | orderNo={} | amount={}", orderNo, order.getTotalAmount());
+            return toResponse(order, orderItemRepository.findByOrderIdOrderByIdAsc(order.getId()));
+        });
+        OrderResponse result = requireResult(response, ResultCode.ORDER_STATUS_INVALID);
+        orderCacheService.evict(orderNo);
+        eventPublisher.publish(OrderEvent.cancelled(orderNo, result.userId(), "退款审批通过"));
+        return result;
+    }
+
+    @Override
+    public OrderResponse rejectRefund(String orderNo, String remark) {
+        OrderResponse response = transactionTemplate.execute(status -> {
+            Order order = orderRepository.findByOrderNoForUpdate(orderNo)
+                    .orElseThrow(() -> new BusinessException(ResultCode.ORDER_NOT_FOUND));
+            if (order.getRefundStatus() != RefundStatus.PENDING) {
+                throw new BusinessException(ResultCode.ORDER_STATUS_INVALID, "该订单没有待处理的退款申请");
+            }
+            order.setRefundStatus(RefundStatus.REJECTED);
+            order.setRefundRemark(remark);
+            orderRepository.save(order);
+            log.info("退款申请被拒绝 | orderNo={} | remark={}", orderNo, remark);
+            return toResponse(order, orderItemRepository.findByOrderIdOrderByIdAsc(order.getId()));
+        });
+        OrderResponse result = requireResult(response, ResultCode.ORDER_STATUS_INVALID);
+        orderCacheService.evict(orderNo);
+        return result;
+    }
+
+    @Override
+    public RevenueResponse revenue(LocalDate date) {
+        LocalDate day = date == null ? LocalDate.now() : date;
+        LocalDateTime start = day.atStartOfDay();
+        LocalDateTime end = start.plusDays(1);
+
+        long paidCount = orderRepository.countByPaidAtGreaterThanEqualAndPaidAtLessThan(start, end);
+        BigDecimal paidAmount = orderRepository.sumPaidAmount(start, end);
+        long refundCount = orderRepository.countByRefundedAtGreaterThanEqualAndRefundedAtLessThan(start, end);
+        BigDecimal refundAmount = orderRepository.sumRefundedAmount(start, end);
+        long createdCount = orderRepository.countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(start, end);
+
+        return new RevenueResponse(day.toString(), paidCount, paidAmount, refundCount, refundAmount,
+                paidAmount.subtract(refundAmount), createdCount);
+    }
+
+    private void markPaymentRefunded(String orderNo) {
+        paymentRecordRepository.findByOrderNo(orderNo).ifPresent(record -> {
+            record.setStatus(PaymentStatus.REFUNDED);
+            paymentRecordRepository.save(record);
+        });
     }
 
     // ---------------------------------------------------------------- 内部实现
@@ -288,8 +400,12 @@ public class OrderServiceImpl implements OrderService {
         Order order = new Order();
         order.setOrderNo(OrderNoGenerator.generate());
         order.setUserId(userId);
+        order.setReceiverName(request.receiverName());
+        order.setReceiverPhone(request.receiverPhone());
+        order.setReceiverAddress(request.receiverAddress());
         order.setTotalAmount(totalAmount);
         order.setStatus(OrderStatus.CREATED);
+        order.setRefundStatus(RefundStatus.NONE);
         order.setRemark(request.remark());
         order.setExpireAt(LocalDateTime.now().plusMinutes(orderProperties.timeoutMinutes()));
         Order saved = orderRepository.save(order);
@@ -383,8 +499,11 @@ public class OrderServiceImpl implements OrderService {
                 .map(item -> new OrderItemResponse(item.getProductId(), item.getProductName(),
                         item.getProductPrice(), item.getQuantity(), item.getSubtotal()))
                 .toList();
-        return new OrderResponse(order.getOrderNo(), order.getUserId(), order.getTotalAmount(),
-                order.getStatus().name(), order.getStatus().getDescription(), order.getRemark(),
+        return new OrderResponse(order.getOrderNo(), order.getUserId(),
+                order.getReceiverName(), order.getReceiverPhone(), order.getReceiverAddress(),
+                order.getTotalAmount(), order.getStatus().name(), order.getStatus().getDescription(),
+                order.getRefundStatus().name(), order.getRefundReason(), order.getRefundRemark(),
+                order.getRefundRequestedAt(), order.getRefundedAt(), order.getRemark(),
                 order.getExpireAt(), order.getPaidAt(), order.getCancelledAt(), order.getCreatedAt(), itemResponses);
     }
 }

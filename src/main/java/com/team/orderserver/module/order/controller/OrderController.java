@@ -2,7 +2,9 @@ package com.team.orderserver.module.order.controller;
 
 import com.team.orderserver.common.api.PageResult;
 import com.team.orderserver.common.api.Result;
+import com.team.orderserver.module.order.dto.ApplyRefundRequest;
 import com.team.orderserver.module.order.dto.CreateOrderRequest;
+import com.team.orderserver.module.order.dto.HandleRefundRequest;
 import com.team.orderserver.module.order.dto.OrderQuery;
 import com.team.orderserver.module.order.dto.OrderResponse;
 import com.team.orderserver.module.order.dto.PayOrderRequest;
@@ -23,6 +25,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @Tag(name = "03-订单", description = "下单、支付、取消、发货、收货、退款")
 @RestController
@@ -93,5 +97,36 @@ public class OrderController {
     @PostMapping("/{orderNo}/refund")
     public Result<OrderResponse> refund(@PathVariable String orderNo) {
         return Result.success(orderService.refund(orderNo));
+    }
+
+    @Operation(summary = "申请退款（用户）", description = "仅已支付/已发货/已完成的订单可申请，需填写理由")
+    @PostMapping("/{orderNo}/refund-request")
+    public Result<OrderResponse> applyRefund(@CurrentUser LoginUser loginUser,
+                                             @PathVariable String orderNo,
+                                             @Valid @RequestBody ApplyRefundRequest request) {
+        return Result.success(orderService.applyRefund(loginUser.id(), orderNo, request.reason()));
+    }
+
+    @Operation(summary = "待处理退款申请（管理员）")
+    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/refunds/pending")
+    public Result<List<OrderResponse>> pendingRefunds() {
+        return Result.success(orderService.pendingRefunds());
+    }
+
+    @Operation(summary = "同意退款（管理员）")
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/{orderNo}/refund/approve")
+    public Result<OrderResponse> approveRefund(@PathVariable String orderNo,
+                                               @RequestBody(required = false) HandleRefundRequest request) {
+        return Result.success(orderService.approveRefund(orderNo, request == null ? null : request.remark()));
+    }
+
+    @Operation(summary = "拒绝退款（管理员）")
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/{orderNo}/refund/reject")
+    public Result<OrderResponse> rejectRefund(@PathVariable String orderNo,
+                                              @RequestBody(required = false) HandleRefundRequest request) {
+        return Result.success(orderService.rejectRefund(orderNo, request == null ? null : request.remark()));
     }
 }

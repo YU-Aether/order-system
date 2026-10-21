@@ -38,12 +38,42 @@ public class Order {
     @Column(nullable = false)
     private Long userId;
 
+    /** 收货人姓名。 */
+    @Column(nullable = false, length = 50)
+    private String receiverName;
+
+    /** 收货人电话。 */
+    @Column(nullable = false, length = 20)
+    private String receiverPhone;
+
+    /** 收货地址。 */
+    @Column(nullable = false, length = 255)
+    private String receiverAddress;
+
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal totalAmount;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private OrderStatus status = OrderStatus.CREATED;
+
+    /** 退款申请状态，与订单状态解耦。 */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private RefundStatus refundStatus = RefundStatus.NONE;
+
+    /** 用户填写的退款理由。 */
+    @Column(length = 255)
+    private String refundReason;
+
+    /** 管理员处理备注（拒绝时的说明）。 */
+    @Column(length = 255)
+    private String refundRemark;
+
+    private LocalDateTime refundRequestedAt;
+
+    /** 退款完成时间，用于当日退款金额统计。 */
+    private LocalDateTime refundedAt;
 
     @Column(length = 255)
     private String remark;

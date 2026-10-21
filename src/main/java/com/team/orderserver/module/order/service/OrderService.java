@@ -4,7 +4,11 @@ import com.team.orderserver.common.api.PageResult;
 import com.team.orderserver.module.order.dto.CreateOrderRequest;
 import com.team.orderserver.module.order.dto.OrderQuery;
 import com.team.orderserver.module.order.dto.OrderResponse;
+import com.team.orderserver.module.order.dto.RevenueResponse;
 import com.team.orderserver.module.payment.entity.PaymentChannel;
+
+import java.time.LocalDate;
+import java.util.List;
 
 /**
  * 订单领域服务。
@@ -37,4 +41,19 @@ public interface OrderService {
 
     /** 管理员退款。 */
     OrderResponse refund(String orderNo);
+
+    /** 用户申请退款（附理由），等待管理员处理。 */
+    OrderResponse applyRefund(Long userId, String orderNo, String reason);
+
+    /** 管理员查看待处理的退款申请。 */
+    List<OrderResponse> pendingRefunds();
+
+    /** 管理员同意退款。 */
+    OrderResponse approveRefund(String orderNo, String remark);
+
+    /** 管理员拒绝退款。 */
+    OrderResponse rejectRefund(String orderNo, String remark);
+
+    /** 按日期统计营收；date 为空时统计当天。 */
+    RevenueResponse revenue(LocalDate date);
 }

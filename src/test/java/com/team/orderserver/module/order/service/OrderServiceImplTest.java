@@ -93,7 +93,8 @@ class OrderServiceImplTest {
                 .thenReturn(List.of(product(1L, "129.00", 0)));
         when(productRepository.decreaseStock(eq(1L), eq(2), eq(ProductStatus.ON_SALE))).thenReturn(0);
 
-        CreateOrderRequest request = new CreateOrderRequest(List.of(new OrderItemRequest(1L, 2)), null);
+        CreateOrderRequest request = new CreateOrderRequest(List.of(new OrderItemRequest(1L, 2)),
+                "张三", "13800138000", "北京市朝阳区幸福路 1 号", null);
 
         BusinessException ex = assertThrows(BusinessException.class, () -> orderService.create(10L, request));
 
@@ -114,7 +115,8 @@ class OrderServiceImplTest {
         });
         when(orderItemRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        CreateOrderRequest request = new CreateOrderRequest(List.of(new OrderItemRequest(1L, 3)), "尽快发货");
+        CreateOrderRequest request = new CreateOrderRequest(List.of(new OrderItemRequest(1L, 3)),
+                "张三", "13800138000", "北京市朝阳区幸福路 1 号", "尽快发货");
 
         OrderResponse response = orderService.create(10L, request);
 
@@ -130,7 +132,8 @@ class OrderServiceImplTest {
     void createShouldFailFastWhenLockNotAcquired() {
         when(distributedLock.tryLock(anyString(), any(Duration.class), any(Duration.class))).thenReturn(null);
 
-        CreateOrderRequest request = new CreateOrderRequest(List.of(new OrderItemRequest(1L, 1)), null);
+        CreateOrderRequest request = new CreateOrderRequest(List.of(new OrderItemRequest(1L, 1)),
+                "张三", "13800138000", "北京市朝阳区幸福路 1 号", null);
 
         BusinessException ex = assertThrows(BusinessException.class, () -> orderService.create(10L, request));
 

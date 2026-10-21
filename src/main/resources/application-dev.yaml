@@ -1,0 +1,10 @@
+# 开发环境：打印 SQL，便于调试
+spring:
+  jpa:
+    show-sql: true
+
+logging:
+  level:
+    com.team.orderserver: debug
+    org.hibernate.SQL: debug
+    org.hibernate.orm.jdbc.bind: trace

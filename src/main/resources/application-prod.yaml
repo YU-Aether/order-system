@@ -1,0 +1,21 @@
+# 生产环境：关闭 SQL 输出，写文件日志
+spring:
+  jpa:
+    show-sql: false
+
+logging:
+  level:
+    root: warn
+    com.team.orderserver: info
+  file:
+    name: ${LOG_FILE:logs/order-server.log}
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      max-history: 30
+
+server:
+  tomcat:
+    threads:
+      max: 400
+      min-spare: 20

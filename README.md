@@ -15,11 +15,15 @@
 - **分层架构**：`common` / `config` / `security` / `module` / `mq`，业务按领域拆分
 - **认证授权**：Spring Security 7 + JWT 无状态认证，`USER` / `ADMIN` 角色隔离
 - **订单状态机**：`待支付 → 已支付 → 已发货 → 已完成`，支持取消与退款，非法流转一律拒绝
+- **收货信息**：下单时填写收货人、联系电话与地址，随订单快照保存
+- **退款流程**：用户提交退款申请（含理由）→ 管理员同意 / 拒绝并留言，与订单状态解耦
 - **库存一致性**：条件更新（`stock >= quantity`）+ 乐观锁版本号，数据库层面杜绝超卖
 - **并发与幂等**：分布式锁（Lua 安全释放）+ 幂等键 + 悲观锁，三层防护
 - **超时关单**：Redis ZSet 延迟队列 + 定时任务，多实例安全
 - **事件驱动**：RabbitMQ Topic 交换机 + 死信队列，事务提交后异步广播订单事件
 - **缓存**：Redis Cache-Aside 缓存订单详情，状态变更主动失效
+- **运营统计**：按日期统计支付金额、退款金额、净收入与订单数
+- **Web 界面**：内置单文件 HTML 页面，登录注册、下单、收银台、订单与运营后台开箱即用
 - **工程规范**：统一响应体、全局异常、参数校验、链路追踪、数据库版本管理、监控指标、单元测试
 
 ## 二、系统架构
@@ -62,6 +66,7 @@ TraceIdFilter → JwtAuthenticationFilter → Controller
 | 消息 | RabbitMQ / Spring AMQP | 4.x / 4.1.1 |
 | 文档 | SpringDoc OpenAPI | 3.0.0 |
 | 监控 | Actuator + Micrometer Prometheus | - |
+| 前端 | 原生 HTML / CSS / JavaScript（单文件，无构建） | - |
 | 构建 | Maven | 3.10 |
 
 ## 四、项目结构
@@ -150,11 +155,20 @@ mvn spring-boot:run
 
 首次启动自动完成：
 
-- Flyway 执行 `V1__init_schema.sql` 建表
+- Flyway 依次执行 `V1__init_schema.sql`（基础表）、`V2__add_receiver_and_refund.sql`（收货信息与退款字段）
 - 创建管理员 `admin / admin123`
 - 写入 3 个演示商品
 
-### 3. 接口文档
+### 3. Web 界面
+
+浏览器打开 <http://localhost:8080/>：
+
+- **普通用户**：注册 / 登录 → 选择商品 → 填写收货信息 → 收银台支付 → 申请退款
+- **管理员**：额外显示「每日营收」与「待处理退款申请」，可发货、同意或拒绝退款
+
+> 页面是 `src/main/resources/static/index.html` 单文件，无需 Node.js 或前端构建。
+
+### 4. 接口文档
 
 - Swagger UI：<http://localhost:8080/swagger-ui.html>
 - OpenAPI JSON：<http://localhost:8080/v3/api-docs>
@@ -180,7 +194,12 @@ mvn spring-boot:run
 | POST | `/api/orders/{orderNo}/cancel` | 登录 | 取消并归还库存 |
 | POST | `/api/orders/{orderNo}/complete` | 登录 | 确认收货 |
 | POST | `/api/orders/{orderNo}/ship` | ADMIN | 发货 |
-| POST | `/api/orders/{orderNo}/refund` | ADMIN | 退款 |
+| POST | `/api/orders/{orderNo}/refund-request` | 登录 | 申请退款（必须填写理由） |
+| GET | `/api/orders/refunds/pending` | ADMIN | 待处理退款申请列表 |
+| POST | `/api/orders/{orderNo}/refund/approve` | ADMIN | 同意退款 |
+| POST | `/api/orders/{orderNo}/refund/reject` | ADMIN | 拒绝退款（可填备注） |
+| POST | `/api/orders/{orderNo}/refund` | ADMIN | 管理员直接退款 |
+| GET | `/api/admin/revenue?date=yyyy-MM-dd` | ADMIN | 按日期统计营收 |
 
 统一响应：
 
@@ -229,17 +248,46 @@ stateDiagram-v2
 
 所有状态变更都经过 `OrderStateMachine` 校验，且使用悲观锁（`SELECT ... FOR UPDATE`）防止并发覆盖。
 
-### 4. 超时关单
+### 4. 退款流程
+
+退款申请与订单状态**解耦**，由独立的 `refund_status` 字段管理：
+
+```mermaid
+stateDiagram-v2
+    [*] --> NONE
+    NONE --> PENDING: 用户提交申请（附理由）
+    PENDING --> APPROVED: 管理员同意（订单转为 REFUNDED）
+    PENDING --> REJECTED: 管理员拒绝（订单状态不变）
+    REJECTED --> PENDING: 用户重新申请
+```
+
+- 只有 `PAID` / `SHIPPED` / `COMPLETED` 的订单可以申请退款
+- 同意后写入 `refunded_at`，支付流水同步标记为 `REFUNDED`，并发布事件
+- 拒绝时保留管理员备注，用户可在订单列表看到拒绝原因
+- 同一订单只允许存在一个待处理申请，防止重复提交
+
+### 5. 营收统计口径
+
+| 指标 | 口径 |
+| --- | --- |
+| 支付金额 | 当日 `paid_at` 的订单总额 |
+| 退款金额 | 当日 `refunded_at` 的订单总额 |
+| 净收入 | 支付金额 − 退款金额 |
+| 支付 / 新建订单 | 当日支付订单数 / 当日创建订单数 |
+
+统计通过 JPQL 聚合直接查库，适合中小数据量；订单量到百万级时建议增加按日预聚合表。
+
+### 6. 超时关单
 
 下单成功后把 `orderNo` 写入 Redis ZSet，score 为到期时间戳；定时任务每 10 秒扫描到期订单，加分布式锁后关闭并归还库存。相比直接 `DEL`，**关单成功才移除**，异常时下次扫描自动重试。
 
-### 5. 消息可靠性
+### 7. 消息可靠性
 
 - 事件在**事务提交后**发布，避免"消息到了、数据没落库"
 - 队列持久化 + 死信队列兜底
 - 发布失败仅记录日志，不阻断主流程（最终一致性由定时任务补偿）
 
-### 6. 安全设计
+### 8. 安全设计
 
 - 密码 BCrypt 加盐哈希
 - JWT 使用 HS256，密钥长度强制校验
